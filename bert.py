@@ -71,8 +71,6 @@ class BertSelfAttention(nn.Module):
     ## Multiply the attention scores with the value to get back weighted values
     weighted_sum_vals = torch.matmul(attention_probabilities, value)
     # dim of weighted_sum_vals: [batch_size, num_attention_heads, seq_len, attention_head_size]
-    ## TODO: attention_layer = concatenate multi-heads to recover the original shape
-    ## TODO: return attention_layer 
     bs = key.size(0)
     seq_len = key.size(2)
     attention_layer = weighted_sum_vals.transpose(1, 2).contiguous().view(bs, seq_len, self.all_head_size)
