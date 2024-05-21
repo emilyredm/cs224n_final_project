@@ -60,7 +60,5 @@ class AdamW(Optimizer):
                 # Refer to the default project handout for more details.
 
                 ### TODO
-                raise NotImplementedError
-
 
         return loss
