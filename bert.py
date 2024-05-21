@@ -66,7 +66,10 @@ class BertSelfAttention(nn.Module):
     ## Normalize the scores
     # attention_scores shape: [batch_size, num_attention_heads, seq_len, seq_len]
     attention_probabilities = nn.Softmax(dim=-1)(attention_scores) # apply softmax along the dim that represents different key positions for each query position 
-    ### REVISIT: Could use dropout here 
+    ### REVISIT: Could use dropout here ?? => start on a few of the attention heads 
+      # thought it might be useful not to overfit to a single task 
+      # our method, here's some latex 
+      # this is what we tried beyond the original code and why
 
     ## Multiply the attention scores with the value to get back weighted values
     weighted_sum_vals = torch.matmul(attention_probabilities, value)

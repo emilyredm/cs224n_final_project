@@ -60,6 +60,17 @@ class AdamW(Optimizer):
                 # Refer to the default project handout for more details.
 
                 ### TODO
+                betas = group["betas"]
+                B1 = betas[0]
+                B2 = betas[1]
+                epsilon = group["eps"]
+                w_decay = group["weight_decay"]
+
+                # initialize m0 
+                # initialize v0
+                t = 0 
+                
+
                 raise NotImplementedError
 
 
