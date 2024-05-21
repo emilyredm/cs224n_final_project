@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from base_bert import BertPreTrainedModel
 from utils import *
 
+import math
 
 class BertSelfAttention(nn.Module):
   def __init__(self, config):
@@ -50,6 +51,29 @@ class BertSelfAttention(nn.Module):
     #   [bs, seq_len, num_attention_heads * attention_head_size = hidden_size].
 
     ### TODO
+    # Q shape: [batch_size, num_attention_heads, seq_len, attention_head_size]
+    # K shape: [batch_size, num_attention_heads, seq_len, attention_head_size]
+    # V shape: [batch_size, num_attention_heads, seq_len, attention_head_size]
+
+    ## Calculate attention scores:  QK^T / sqrt(d_k)
+    d_k = key.size(-1)  # attention head size 
+    key_T = key.transpose(-1, -2) # K shape: [batch_size, num_attention_heads, attention_head_size, seq_len]
+    attention_scores = torch.matmul(query, key_T) / math.sqrt(d_k)
+    
+    ## Before normalizing the scores, use the attention mask to mask out the padding token scores.
+    attention_scores += attention_mask
+
+    ## Normalize the scores
+    # attention_scores shape: [batch_size, num_attention_heads, seq_len, seq_len]
+    attention_probabilities = nn.Softmax(dim=-1)(attention_scores) # apply softmax along the dim that represents different key positions for each query position 
+    ### REVISIT: Could use dropout here 
+
+    ## Multiply the attention scores with the value to get back weighted values
+    weighted_sum_vals = torch.matmul(attention_probabilities, value)
+    
+    ## TODO: attention_layer = concatenate multi-heads to recover the original shape
+    ## TODO: return attention_layer 
+
     raise NotImplementedError
 
 
