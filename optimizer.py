@@ -83,10 +83,9 @@ class AdamW(Optimizer):
 
                 ## Update biased first and second moments of the gradients  
                 # 1st: 
-                exp_avg = (B1 * exp_avg) + ((1 - B1) * grad)
+                exp_avg.mul_(B1).add_(grad, alpha=(1 - B1))
                 # 2nd: 
-                exp_avg_sq = (B2 * exp_avg_sq) + ((1 - B2) * (grad * grad))
-
+                exp_avg_sq.mul_(B2).addcmul_(grad, grad, value=(1 - B2))
                 ## Apply bias correction, efficient version 
                 if correct_b: 
                     b_correction_1 = 1 - B1 ** t 
@@ -102,4 +101,6 @@ class AdamW(Optimizer):
                 if w_decay != 0 : 
                     decay = alpha * w_decay * p.data    # use un-corrected learning rate (alpha)
                     p.data = p.data - decay
+                ###
+
         return loss
