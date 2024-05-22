@@ -59,19 +59,47 @@ class AdamW(Optimizer):
                 # 4. Apply weight decay after the main gradient-based updates.
                 # Refer to the default project handout for more details.
 
+                print("state: ", state)
+                print("group: ", group)
+
                 ### TODO
-                betas = group["betas"]
-                B1 = betas[0]
-                B2 = betas[1]
+                B1, B2 = group["betas"]
                 epsilon = group["eps"]
                 w_decay = group["weight_decay"]
+                correct_b = group["correct_bias"]
 
-                # initialize m0 
-                # initialize v0
-                t = 0 
-                
+                ## Initialize state
+                if len(state) == 0:
+                    state["step"] = 0
+                    state["exp_avg"] = torch.zeros(p.data.size(), dtype=p.data.dtype, device=p.data.device)
+                    state["exp_avg_sq"] = torch.zeros(p.data.size(), dtype=p.data.dtype, device=p.data.device)
 
-                raise NotImplementedError
+                exp_avg = state["exp_avg"]
+                exp_avg_sq = state["exp_avg_sq"]
 
+                ## Increase step 
+                state["step"] += 1
+                t = state["step"]
 
+                ## Update biased first and second moments of the gradients  
+                # 1st: 
+                exp_avg = (B1 * exp_avg) + ((1 - B1) * grad)
+                # 2nd: 
+                exp_avg_sq = (B2 * exp_avg_sq) + ((1 - B2) * (grad * grad))
+
+                ## Apply bias correction, efficient version 
+                if correct_b: 
+                    b_correction_1 = 1 - B1 ** t 
+                    b_correction_2 = 1 - B2 ** t 
+                    alpha_correction = alpha * (b_correction_2 ** 0.5) / b_correction_1
+                else: 
+                    alpha_correction = alpha 
+
+                ## Update parameters, efficient version 
+                p.data = p.data - (alpha_correction * (exp_avg / (exp_avg_sq.sqrt() + epsilon)))
+
+                ## Apply weight decay 
+                if w_decay != 0 : 
+                    decay = alpha * w_decay * p.data    # use un-corrected learning rate (alpha)
+                    p.data = p.data - decay
         return loss
