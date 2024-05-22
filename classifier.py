@@ -66,7 +66,6 @@ class BertSentimentClassifier(torch.nn.Module):
         outputs = self.bert(input_ids, attention_mask)
         pooled_output = outputs['pooler_output']
         logits = self.classifier(self.dropout(pooled_output)) 
-        
         return logits
 
 

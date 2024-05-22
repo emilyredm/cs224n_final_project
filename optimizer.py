@@ -59,8 +59,8 @@ class AdamW(Optimizer):
                 # 4. Apply weight decay after the main gradient-based updates.
                 # Refer to the default project handout for more details.
 
-                print("state: ", state)
-                print("group: ", group)
+                # print("state: ", state)
+                # print("group: ", group)
 
                 ### TODO
                 B1, B2 = group["betas"]
