@@ -70,6 +70,8 @@ class BertSelfAttention(nn.Module):
       # thought it might be useful not to overfit to a single task 
       # our method, here's some latex 
       # this is what we tried beyond the original code and why
+    
+    attention_probabilities = self.dropout(attention_probabilities)
 
     ## Multiply the attention scores with the value to get back weighted values
     weighted_sum_vals = torch.matmul(attention_probabilities, value)
