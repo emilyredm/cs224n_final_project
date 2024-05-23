@@ -357,7 +357,7 @@ def get_args():
 
 
 if __name__ == "__main__":
-    # print("NOTE: This is the version with dropout implemented for the attention probabilities.")
+    print("NOTE: This is the version with dropout implemented for the attention probabilities and hidden dropout implemented")
     args = get_args()
     seed_everything(args.seed)
 

@@ -71,7 +71,7 @@ class BertSelfAttention(nn.Module):
       # our method, here's some latex 
       # this is what we tried beyond the original code and why
     
-    # attention_probabilities = self.dropout(attention_probabilities)
+    attention_probabilities = self.dropout(attention_probabilities)
 
     ## Multiply the attention scores with the value to get back weighted values
     weighted_sum_vals = torch.matmul(attention_probabilities, value)
@@ -115,6 +115,8 @@ class BertLayer(nn.Module):
     self.out_dense = nn.Linear(config.intermediate_size, config.hidden_size)
     self.out_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
     self.out_dropout = nn.Dropout(config.hidden_dropout_prob)
+    self.hidden_state_dropout = nn.Dropout(config.hidden_dropout_prob)
+    
 
   def add_norm(self, input, output, dense_layer, dropout, ln_layer):
     """
@@ -146,6 +148,7 @@ class BertLayer(nn.Module):
     ### TODO
     attention_layer = self.self_attention(hidden_states, attention_mask)
     attention_output = self.add_norm(hidden_states, attention_layer, self.attention_dense, self.attention_dropout, self.attention_layer_norm)
+    attention_output = self.hidden_state_dropout(attention_output)
     feed_forward_output = self.interm_af(self.interm_dense(attention_output))
     output = self.add_norm(attention_output, feed_forward_output, self.out_dense, self.out_dropout, self.out_layer_norm)
     return output
