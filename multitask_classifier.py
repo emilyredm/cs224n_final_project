@@ -79,7 +79,7 @@ class MultitaskBERT(nn.Module):
 
 
     def forward(self, input_ids, attention_mask):
-        'Takes a batch of sentences and produces embeddings for them.'
+        'Takes a batch of sentences and produces u embeddings for them.'
         # The final BERT embedding is the hidden state of [CLS] token (the first token)
         # Here, you can start by just returning the embeddings straight from BERT.
         # When thinking of improvements, you can later try modifying this
@@ -193,7 +193,8 @@ def train_multitask(args):
 
     lr = args.lr
     optimizer = AdamW(model.parameters(), lr=lr)
-    best_dev_acc = 0
+    best_dev_loss = float('inf')  # Initialize best_dev_loss
+
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
