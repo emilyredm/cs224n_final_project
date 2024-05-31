@@ -187,6 +187,7 @@ class BertConfig(PretrainedConfig):
     self,
     vocab_size=30522,
     hidden_size=768,
+    hidden_size_aug = 204,
     num_hidden_layers=12,
     num_attention_heads=12,
     intermediate_size=3072,
@@ -220,3 +221,5 @@ class BertConfig(PretrainedConfig):
     self.gradient_checkpointing = gradient_checkpointing
     self.position_embedding_type = position_embedding_type
     self.use_cache = use_cache
+
+    self.hidden_size_aug = hidden_size_aug
