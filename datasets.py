@@ -208,7 +208,7 @@ class SentencePairTestDataset(Dataset):
         return batched_data
 
 
-def load_multitask_data(sentiment_filename,paraphrase_filename,similarity_filename,split='train'):
+def load_multitask_data(sentiment_filename,paraphrase_filename,similarity_filename,quora_len=None,split='train'):
     sentiment_data = []
     num_labels = {}
     if split == 'test':
@@ -232,20 +232,22 @@ def load_multitask_data(sentiment_filename,paraphrase_filename,similarity_filena
     paraphrase_data = []
     if split == 'test':
         with open(paraphrase_filename, 'r') as fp:
-            for record in csv.DictReader(fp,delimiter = '\t'):
+            for record in csv.DictReader(fp, delimiter='\t'):
                 sent_id = record['id'].lower().strip()
                 paraphrase_data.append((preprocess_string(record['sentence1']),
                                         preprocess_string(record['sentence2']),
                                         sent_id))
-
     else:
         with open(paraphrase_filename, 'r') as fp:
-            for record in csv.DictReader(fp,delimiter = '\t'):
+            reader = csv.DictReader(fp, delimiter='\t')
+            for i, record in enumerate(reader):  # Enumerate to track line number
+                if quora_len is not None and i >= quora_len:  # Stop if limit reached
+                    break
                 try:
                     sent_id = record['id'].lower().strip()
                     paraphrase_data.append((preprocess_string(record['sentence1']),
                                             preprocess_string(record['sentence2']),
-                                            int(float(record['is_duplicate'])),sent_id))
+                                            int(float(record['is_duplicate'])), sent_id))
                 except:
                     pass
 
