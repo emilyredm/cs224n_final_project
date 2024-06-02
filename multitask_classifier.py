@@ -230,12 +230,19 @@ def train_multitask(args):
                                                     batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
             loss_sts = sts_criterion(logits_sts, batch_sts['labels'].to(device).float())
 
+            # Gradient surgery (treating all tasks equally)
+            all_losses = [loss_sst, loss_para, loss_sts]  # List of loss values
+
+            # Normalize losses (optional)
+            loss_weights = [1 / loss.item() for loss in all_losses]
+            weighted_losses = [loss * weight for loss, weight in zip(all_losses, loss_weights)]
+
             all_grads = []
-            for loss in [loss_sst, loss_para, loss_sts]:
+            for loss in weighted_losses:
+                model.zero_grad()
                 loss.backward(retain_graph=True)  # Calculate gradients for each task
                 grad = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
                 all_grads.append(grad)
-                optimizer.zero_grad()  # Clear gradients after each task
 
             for i, grad_i in enumerate(all_grads):
                 for j, grad_j in enumerate(all_grads):
@@ -249,8 +256,11 @@ def train_multitask(args):
                                     gj_norm = torch.norm(gj)
                                     grad_proj = gi - (torch.dot(gi, gj) / gj_norm**2) * gj
                                     param.grad = grad_proj  # Update gradient in-place
-
-
+                                    
+            # Combined loss (no weighting needed since tasks are treated equally)
+            loss = sum(all_losses)
+            total_loss += loss.item()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
             optimizer.step()  # Update parameters after accumulating gradients for all tasks
 
 
