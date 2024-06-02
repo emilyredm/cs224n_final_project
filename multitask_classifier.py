@@ -205,66 +205,61 @@ def train_multitask(args):
     
     # Run for the specified number of epochs.
     # Run for the specified number of epochs.
+    best_dev_loss = float('inf')
+    lambda_value = 0.3  # Scaling factor for auxiliary task gradients
+
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
-        num_batches = 0
-        dev_losses = []
         train_losses = []
-        dev_sst_accuracy_list = []
-        dev_para_accuracy_list = []
-        dev_sts_corr_list = []
-
         for batch_sst, batch_para, batch_sts in tqdm(zip(sst_train_dataloader, para_train_dataloader, sts_train_dataloader), desc=f'train-{epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()  # Clear gradients before each batch
+            optimizer.zero_grad()
 
-            # Calculate losses for each task
+            # SST loss
             logits_sst = model.predict_sentiment(batch_sst['token_ids'].to(device), batch_sst['attention_mask'].to(device))
-            loss_sst = sst_criterion(logits_sst, batch_sst['labels'].to(device)).view(-1)
+            loss_sst = sst_criterion(logits_sst, batch_sst['labels'].to(device).view(-1))
 
+            # Paraphrase loss
             logits_para = model.predict_paraphrase(batch_para['token_ids_1'].to(device), batch_para['attention_mask_1'].to(device),
-                                                batch_para['token_ids_2'].to(device), batch_para['attention_mask_2'].to(device))
+                                                  batch_para['token_ids_2'].to(device), batch_para['attention_mask_2'].to(device))
             loss_para = para_criterion(logits_para, batch_para['labels'].to(device).float())
 
+            # STS loss
             logits_sts = model.predict_similarity(batch_sts['token_ids_1'].to(device), batch_sts['attention_mask_1'].to(device),
-                                                    batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
+                                                batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
             loss_sts = sts_criterion(logits_sts, batch_sts['labels'].to(device).float())
 
-            # Gradient surgery (treating all tasks equally)
-            all_losses = [loss_sst, loss_para, loss_sts]  # List of loss values
+            # Gradient surgery (as described in the paper)
+            loss_main = loss_sst  # Main task is sentiment classification
+            loss_aux = lambda_value * (loss_para + loss_sts)  # Combined auxiliary loss
 
-            # Normalize losses (optional)
-            loss_weights = [1 / loss.item() for loss in all_losses]
-            weighted_losses = [loss * weight for loss, weight in zip(all_losses, loss_weights)]
+            # Calculate gradients for main and auxiliary tasks
+            model.zero_grad()
+            loss_main.backward(retain_graph=True)
+            grad_main = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
 
-            all_grads = []
-            for loss in weighted_losses:
-                model.zero_grad()
-                loss.backward(retain_graph=True)  # Calculate gradients for each task
-                grad = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
-                all_grads.append(grad)
+            model.zero_grad()
+            loss_aux.backward()
+            grad_aux = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
 
-            for i, grad_i in enumerate(all_grads):
-                for j, grad_j in enumerate(all_grads):
-                    if i != j:  # Don't compare a task with itself
-                        for name, param in model.named_parameters():
-                            if name in grad_i and name in grad_j:
-                                gi = grad_i[name]
-                                gj = grad_j[name]
-                                if torch.dot(gi, gj) < 0:  # Conflicting gradients
-                                    gi_norm = torch.norm(gi)
-                                    gj_norm = torch.norm(gj)
-                                    grad_proj = gi - (torch.dot(gi, gj) / gj_norm**2) * gj
-                                    param.grad = grad_proj  # Update gradient in-place
-                                    
-            # Combined loss (no weighting needed since tasks are treated equally)
-            loss = sum(all_losses)
+            # Apply gradient surgery
+            for name, param in model.named_parameters():
+                if name in grad_main and name in grad_aux:
+                    grad_main_norm = torch.norm(grad_main[name])
+                    grad_aux_norm = torch.norm(grad_aux[name])
+                    if grad_main_norm > 0 and grad_aux_norm > 0:
+                        cos_sim = torch.dot(grad_main[name].flatten(), grad_aux[name].flatten()) / (grad_main_norm * grad_aux_norm)
+                        if cos_sim < 0:  # Gradient conflict
+                            grad_proj = grad_main[name] - (torch.dot(grad_aux[name], grad_main[name]) / grad_aux_norm**2) * grad_aux[name]
+                            param.grad = grad_proj
+
+            # Combined loss
+            loss = loss_main + loss_aux
             total_loss += loss.item()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  
-            optimizer.step()  # Update parameters after accumulating gradients for all tasks
 
+            optimizer.step()
 
-        avg_train_loss = total_loss / (len(sst_train_dataloader) + len(para_train_dataloader) + len(sts_train_dataloader))
+        avg_train_loss = total_loss / len(sst_train_dataloader)  # Calculate average loss over SST batches
         train_losses.append(avg_train_loss)
 
         # Evaluate on the dev sets
@@ -272,18 +267,22 @@ def train_multitask(args):
             sst_dev_dataloader, para_dev_dataloader, sts_dev_dataloader, model, device)
 
         # Track development loss 
-        dev_loss = (1 - dev_sentiment_accuracy) + (1 - dev_paraphrase_accuracy) + (1 - dev_sts_corr)
+        dev_losses = []
+        dev_sst_accuracy_list = []
+        dev_para_accuracy_list = []
+        dev_sts_corr_list = []
+        dev_loss = (1 - dev_sentiment_accuracy) + (1 - dev_paraphrase_accuracy) + (1 - dev_sts_corr) / 3  # Average dev loss
         dev_losses.append(dev_loss)
         dev_sst_accuracy_list.append(dev_sentiment_accuracy)
         dev_para_accuracy_list.append(dev_paraphrase_accuracy)
         dev_sts_corr_list.append(dev_sts_corr)
 
-
-        if dev_loss < best_dev_loss:  
+        if dev_loss < best_dev_loss:  # Save the model if dev loss improves
             best_dev_loss = dev_loss
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss :: {avg_train_loss :.3f}, dev loss :: {dev_loss :.3f}, dev sentiment acc :: {dev_sentiment_accuracy :.3f}, dev para acc :: {dev_paraphrase_accuracy :.3f}, dev sts corr :: {dev_sts_corr :.3f}")
+
 
 def test_multitask(args):
     '''Test and save predictions on the dev and test sets of all three tasks.'''
