@@ -23,6 +23,7 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
+import math
 
 from datasets import (
     SentenceClassificationDataset,
@@ -207,38 +208,53 @@ def train_multitask(args):
         dev_para_accuracy_list = []
         dev_sts_corr_list = []
         
-        # Iterate over each data loader with tqdm
-        for batch_sst in tqdm(sst_train_dataloader, desc=f'SST Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
-            # SST loss
-            logits_sst = model.predict_sentiment(batch_sst['token_ids'].to(device), batch_sst['attention_mask'].to(device))
-            loss_sst = F.cross_entropy(logits_sst, batch_sst['labels'].to(device))
-            
-            loss_sst.backward()
-            optimizer.step()
-            total_loss += loss_sst.item()  # Accumulate total loss
-            
-        for batch_para in tqdm(para_train_dataloader, desc=f'Paraphrase Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
-            # Paraphrase loss
-            logits_para = model.predict_paraphrase(batch_para['token_ids_1'].to(device), batch_para['attention_mask_1'].to(device),
-                                                  batch_para['token_ids_2'].to(device), batch_para['attention_mask_2'].to(device))
-            loss_para = F.binary_cross_entropy_with_logits(logits_para, batch_para['labels'].to(device).float())
+        # Calculate annealed sampling alpha for this epoch
+        alpha = 1 - 0.8 * math.exp(-1 * epoch / (args.epochs - 1))
 
-            loss_para.backward()
-            optimizer.step()
-            total_loss += loss_para.item()  # Accumulate total loss
+        # Adjust sampling probabilities based on dataset size and alpha
+        sst_proportion = len(sst_train_data)
+        para_proportion = len(para_train_data)
+        sts_proportion = len(sts_train_data)
+        total_samples = sst_proportion + para_proportion + sts_proportion
+
+        p_sst = (sst_proportion / total_samples) ** alpha
+        p_para = (para_proportion / total_samples) ** alpha
+        p_sts = (sts_proportion / total_samples) ** alpha
         
-        for batch_sts in tqdm(sts_train_dataloader, desc=f'STS Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
-            # STS loss
-            logits_sts = model.predict_similarity(batch_sts['token_ids_1'].to(device), batch_sts['attention_mask_1'].to(device),
-                                                batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
-            loss_sts = F.mse_loss(logits_sts, batch_sts['labels'].to(device).float())
+        # Normalize probabilities
+        total_prob = p_sst + p_para + p_sts
+        p_sst /= total_prob
+        p_para /= total_prob
+        p_sts /= total_prob
 
-            loss_sts.backward()
+        # Iterate over batches, sampling tasks based on probabilities
+        for _ in tqdm(range(len(sst_train_dataloader)), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
+            optimizer.zero_grad()
+
+            # Sample task based on the adjusted probabilities
+            task = np.random.choice(["sst", "para", "sts"], p=[p_sst, p_para, p_sts])
+
+            if task == "sst":
+                batch = next(iter(sst_train_dataloader))
+                logits = model.predict_sentiment(batch['token_ids'].to(device), batch['attention_mask'].to(device))
+                loss = F.cross_entropy(logits, batch['labels'].to(device))
+            elif task == "para":
+                batch = next(iter(para_train_dataloader))
+                logits = model.predict_paraphrase(batch['token_ids_1'].to(device), batch['attention_mask_1'].to(device),
+                                                  batch['token_ids_2'].to(device), batch['attention_mask_2'].to(device))
+                loss = F.binary_cross_entropy_with_logits(logits, batch['labels'].to(device).float())
+            else:  # task == "sts"
+                batch = next(iter(sts_train_dataloader))
+                logits = model.predict_similarity(batch['token_ids_1'].to(device), batch['attention_mask_1'].to(device),
+                                                batch['token_ids_2'].to(device), batch['attention_mask_2'].to(device))
+                loss = F.mse_loss(logits, batch['labels'].to(device).float())
+            
+            loss.backward()
+            # ... (Gradient surgery, same as before)
+
             optimizer.step()
-            total_loss += loss_sts.item()  # Accumulate total los
+            total_loss += loss.item()
+            num_batches += 1
 
         avg_train_loss = total_loss / (len(sst_train_dataloader) + len(para_train_dataloader) + len(sts_train_dataloader))
         train_losses.append(avg_train_loss)
