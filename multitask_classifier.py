@@ -450,6 +450,7 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
+import math
 
 from datasets import (
     SentenceClassificationDataset,
@@ -626,6 +627,8 @@ def train_multitask(args):
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_loss = float('inf')  # Initialize best_dev_loss
 
+    total_training_steps = 2400  # Define the total training steps for an "epoch"
+    total_epochs = args.epochs
 
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
@@ -637,39 +640,69 @@ def train_multitask(args):
         dev_sst_accuracy_list = []
         dev_para_accuracy_list = []
         dev_sts_corr_list = []
-        
-        # Iterate over each data loader with tqdm
-        for batch_sst in tqdm(sst_train_dataloader, desc=f'SST Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
-            # SST loss
-            logits_sst = model.predict_sentiment(batch_sst['token_ids'].to(device), batch_sst['attention_mask'].to(device))
-            loss_sst = F.cross_entropy(logits_sst, batch_sst['labels'].to(device))
-            
-            loss_sst.backward()
-            optimizer.step()
-            total_loss += loss_sst.item()  # Accumulate total loss
-            
-        for batch_para in tqdm(para_train_dataloader, desc=f'Paraphrase Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
-            # Paraphrase loss
-            logits_para = model.predict_paraphrase(batch_para['token_ids_1'].to(device), batch_para['attention_mask_1'].to(device),
-                                                  batch_para['token_ids_2'].to(device), batch_para['attention_mask_2'].to(device))
-            loss_para = F.binary_cross_entropy_with_logits(logits_para, batch_para['labels'].to(device).float())
 
-            loss_para.backward()
-            optimizer.step()
-            total_loss += loss_para.item()  # Accumulate total loss
+        alpha = 1 - 0.8 * math.exp(-1 * (epoch + 1) / (total_epochs - 1))
         
-        for batch_sts in tqdm(sts_train_dataloader, desc=f'STS Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
-            # STS loss
-            logits_sts = model.predict_similarity(batch_sts['token_ids_1'].to(device), batch_sts['attention_mask_1'].to(device),
-                                                batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
-            loss_sts = F.mse_loss(logits_sts, batch_sts['labels'].to(device).float())
+        # # Iterate over each data loader with tqdm
+        # for batch_sst in tqdm(sst_train_dataloader, desc=f'SST Train Epoch {epoch}', disable=TQDM_DISABLE):
+        #     optimizer.zero_grad()
+        #     # SST loss
+        #     logits_sst = model.predict_sentiment(batch_sst['token_ids'].to(device), batch_sst['attention_mask'].to(device))
+        #     loss_sst = F.cross_entropy(logits_sst, batch_sst['labels'].to(device))
+            
+        #     loss_sst.backward()
+        #     optimizer.step()
+        #     total_loss += loss_sst.item()  # Accumulate total loss
+            
+        # for batch_para in tqdm(para_train_dataloader, desc=f'Paraphrase Train Epoch {epoch}', disable=TQDM_DISABLE):
+        #     optimizer.zero_grad()
+        #     # Paraphrase loss
+        #     logits_para = model.predict_paraphrase(batch_para['token_ids_1'].to(device), batch_para['attention_mask_1'].to(device),
+        #                                           batch_para['token_ids_2'].to(device), batch_para['attention_mask_2'].to(device))
+        #     loss_para = F.binary_cross_entropy_with_logits(logits_para, batch_para['labels'].to(device).float())
 
-            loss_sts.backward()
+        #     loss_para.backward()
+        #     optimizer.step()
+        #     total_loss += loss_para.item()  # Accumulate total loss
+        
+        # for batch_sts in tqdm(sts_train_dataloader, desc=f'STS Train Epoch {epoch}', disable=TQDM_DISABLE):
+        #     optimizer.zero_grad()
+        #     # STS loss
+        #     logits_sts = model.predict_similarity(batch_sts['token_ids_1'].to(device), batch_sts['attention_mask_1'].to(device),
+        #                                         batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
+        #     loss_sts = F.mse_loss(logits_sts, batch_sts['labels'].to(device).float())
+
+        #     loss_sts.backward()
+        #     optimizer.step()
+        #     total_loss += loss_sts.item()  # Accumulate total los
+
+        for step in tqdm(range(total_training_steps), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
+            optimizer.zero_grad()
+
+            # Determine task to sample from based on alpha
+            task = np.random.choice(["sst", "para", "sts"], p=[alpha / 3, alpha / 3, 1 - (2 * alpha / 3)])
+            
+            if task == "sst":
+                batch = next(iter(sst_train_dataloader))
+                logits = model.predict_sentiment(batch['token_ids'].to(device), batch['attention_mask'].to(device))
+                loss = F.cross_entropy(logits, batch['labels'].to(device))
+            elif task == "para":
+                batch = next(iter(para_train_dataloader))
+                logits = model.predict_paraphrase(batch['token_ids_1'].to(device), batch['attention_mask_1'].to(device),
+                                                  batch['token_ids_2'].to(device), batch['attention_mask_2'].to(device))
+                loss = F.binary_cross_entropy_with_logits(logits, batch['labels'].to(device).float())
+            else:  # task == "sts"
+                batch = next(iter(sts_train_dataloader))
+                logits = model.predict_similarity(batch['token_ids_1'].to(device), batch['attention_mask_1'].to(device),
+                                                batch['token_ids_2'].to(device), batch['attention_mask_2'].to(device))
+                loss = F.mse_loss(logits, batch['labels'].to(device).float())
+
+            loss.backward()
+            # ... (Gradient surgery, same as before)
+
             optimizer.step()
-            total_loss += loss_sts.item()  # Accumulate total los
+            total_loss += loss.item()
+            num_batches += 1
 
         avg_train_loss = total_loss / (len(sst_train_dataloader) + len(para_train_dataloader) + len(sts_train_dataloader))
         train_losses.append(avg_train_loss)
