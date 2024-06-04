@@ -261,7 +261,7 @@ def train_multitask(args):
             best_dev_loss = dev_loss
             save_model(model, optimizer, args, config, args.filepath)
 
-        current_lr = scheduler.get_last_lr()[0]  # Get the last learning rate
+        current_lr = optimizer.param_groups[0]['lr']  # Get the last learning rate
         print(f"Current learning rate: {current_lr}")
         scheduler.step(dev_loss)
         print(f"Epoch {epoch}: train loss :: {avg_train_loss :.3f}, dev loss :: {dev_loss :.3f}, dev sentiment acc :: {dev_sentiment_accuracy :.3f}, dev para acc :: {dev_paraphrase_accuracy :.3f}, dev sts corr :: {dev_sts_corr :.3f}")
