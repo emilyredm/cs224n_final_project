@@ -210,13 +210,13 @@ def train_multitask(args):
             sts_batch = next(iter(sts_train_dataloader))
 
             # Calculate losses for each task (use predict_* functions)
-            sst_loss = F.cross_entropy(model.predict_sentiment(sst_batch['token_ids'], sst_batch['attention_mask']), sst_batch['labels'])
-            para_loss = F.binary_cross_entropy_with_logits(model.predict_paraphrase(para_batch['token_ids_1'], para_batch['attention_mask_1'],
-                                                                                   para_batch['token_ids_2'], para_batch['attention_mask_2']), 
-                                                           para_batch['labels'].float())
-            sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'], sts_batch['attention_mask_1'],
-                                                          sts_batch['token_ids_2'], sts_batch['attention_mask_2']), 
-                                  sts_batch['labels'].float())
+            sst_loss = F.cross_entropy(model.predict_sentiment(sst_batch['token_ids'].to(device), sst_batch['attention_mask'].to(device)), sst_batch['labels'].to(device))
+            para_loss = F.binary_cross_entropy_with_logits(model.predict_paraphrase(para_batch['token_ids_1'].to(device), para_batch['attention_mask_1'].to(device),
+                                                                                   para_batch['token_ids_2'].to(device), para_batch['attention_mask_2'].to(device)), 
+                                                           para_batch['labels'].to(device).float())
+            sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device),
+                                                          sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device)), 
+                                  sts_batch['labels'].to(device).float())
             
             # Combined loss (without annealed sampling weights)
             loss = sst_loss + para_loss + sts_loss 
