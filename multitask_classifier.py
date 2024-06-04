@@ -114,18 +114,21 @@ class MultitaskBERT(nn.Module):
         return logit
 
 
-    def predict_similarity(self,
-                           input_ids_1, attention_mask_1,
-                           input_ids_2, attention_mask_2):
+    def predict_similarity(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        ### TODO
-        logit = self.similarity_classifier(torch.cat([self.forward(input_ids_1, attention_mask_1),
-                                                      self.forward(input_ids_2, attention_mask_2)], dim=-1)
-                                             ).squeeze()
-        # same as above
-        return logit
+        sent1_emb = self.forward(input_ids_1, attention_mask_1)
+        sent2_emb = self.forward(input_ids_2, attention_mask_2)
+
+        # Normalize embeddings
+        sent1_emb = F.normalize(sent1_emb, p=2, dim=1)
+        sent2_emb = F.normalize(sent2_emb, p=2, dim=1)
+
+        # Compute cosine similarity
+        similarity = torch.sum(sent1_emb * sent2_emb, dim=1, keepdim=True)
+
+        return similarity 
 
 
 
@@ -194,7 +197,7 @@ def train_multitask(args):
     # Determine the shortest dataloader for balanced training
     min_dataloader_len = min(len(sst_train_dataloader), len(para_train_dataloader), len(sts_train_dataloader))
 
-    sts_criterion = nn.CosineEmbeddingLoss(margin=0.2)  # Margin can be adjusted
+    sts_criterion = nn.MSELoss()
     best_dev_sts_corr = float('-inf') 
 
     for epoch in range(args.epochs):
@@ -227,17 +230,22 @@ def train_multitask(args):
                                                                                    para_batch['token_ids_2'].to(device), para_batch['attention_mask_2'].to(device)), 
                                                            para_batch['labels'].to(device).float())
             
+            # STS loss using CosineSimilarity
             sent1_emb = model(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device))
             sent2_emb = model(sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device))
 
-            similarity_target = (sts_batch['labels'].to(device)*4) -1
-            sts_loss = sts_criterion(sent1_emb, sent2_emb, similarity_target)
+            # Normalize embeddings
+            sent1_emb = F.normalize(sent1_emb, p=2, dim=1)
+            sent2_emb = F.normalize(sent2_emb, p=2, dim=1)
 
-            # sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device),
-            #                                               sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device)), 
-            #                       sts_batch['labels'].to(device).float())
-            
-            # Combined loss (without annealed sampling weights)
+            # Compute cosine similarity
+            similarity = torch.cosine_similarity(sent1_emb, sent2_emb)
+
+            # Scale similarity to [0, 5] to match labels
+            similarity = (similarity + 1) * 2.5
+
+            # Calculate MSE loss between predicted similarity and gold labels
+            sts_loss = sts_criterion(similarity, sts_batch['labels'].to(device).float())
             loss = sst_loss + para_loss + sts_loss 
             
             loss.backward()
