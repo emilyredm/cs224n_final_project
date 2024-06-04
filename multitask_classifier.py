@@ -23,8 +23,6 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
-from pcgrad import PCGrad
-import math
 
 from datasets import (
     SentenceClassificationDataset,
@@ -181,81 +179,62 @@ def train_multitask(args):
     sts_dev_dataloader = DataLoader(sts_dev_data, shuffle=False, batch_size=args.batch_size,
                                         collate_fn=sts_dev_data.collate_fn)
 
-    # Init model.
-    config = {'hidden_dropout_prob': args.hidden_dropout_prob,
-              'num_labels': num_labels,
-              'hidden_size': 768,
-              'data_dir': '.',
-              'fine_tune_mode': args.fine_tune_mode}
-
-    config = SimpleNamespace(**config)
-
-    model = MultitaskBERT(config)
-    model = model.to(device)
-
-    lr = args.lr
-    optimizer = AdamW(model.parameters(), lr=lr)
-    pcgrad_optimizer = PCGrad(optimizer)
+     # Init model and optimizer
+    config = SimpleNamespace(**{
+        'hidden_dropout_prob': args.hidden_dropout_prob,
+        'num_labels': num_labels,
+        'hidden_size': 768,
+        'data_dir': '.',
+        'fine_tune_mode': args.fine_tune_mode
+    })
+    model = MultitaskBERT(config).to(device)
+    optimizer = AdamW(model.parameters(), lr=args.lr)
     best_dev_loss = float('inf')  # Initialize best_dev_loss
 
-    # Run for the specified number of epochs.
+    # Determine the shortest dataloader for balanced training
+    min_dataloader_len = min(len(sst_train_dataloader), len(para_train_dataloader), len(sts_train_dataloader))
+
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
-        num_batches = 0
-        dev_losses = []
         train_losses = []
+        dev_losses = []
         dev_sst_accuracy_list = []
         dev_para_accuracy_list = []
         dev_sts_corr_list = []
-        
-        # Calculate annealed sampling alpha for this epoch
-        alpha = 1 - 0.8 * math.exp(-1 * epoch / (args.epochs - 1))
 
-        # Adjust sampling probabilities based on dataset size and alpha
-        sst_proportion = len(sst_train_data)
-        para_proportion = len(para_train_data)
-        sts_proportion = len(sts_train_data)
-        total_samples = sst_proportion + para_proportion + sts_proportion
+        # Create iterators for each dataloader and track indices
+        sst_iter, para_iter, sts_iter = iter(sst_train_dataloader), iter(para_train_dataloader), iter(sts_train_dataloader)
+        # sst_idx, para_idx, sts_idx = 0, 0, 0
 
-        p_sst = (sst_proportion / total_samples) ** alpha
-        p_para = (para_proportion / total_samples) ** alpha
-        p_sts = (sts_proportion / total_samples) ** alpha
-        
-        # Normalize probabilities
-        total_prob = p_sst + p_para + p_sts
-        p_sst /= total_prob
-        p_para /= total_prob
-        p_sts /= total_prob
+        for batch_idx in tqdm(range(min_dataloader_len), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
+            optimizer.zero_grad()
+            
+            # Batch-level Sampling: Select one batch from each task
+            sst_batch = next(sst_iter)
+            para_batch = next(para_iter)
+            sts_batch = next(sts_iter)
 
-        # Iterate over batches, sampling tasks based on probabilities
-        for _ in tqdm(range(len(sst_train_dataloader)), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
-            pcgrad_optimizer.zero_grad()
-
-            # Sample task based on the adjusted probabilities
-            task = np.random.choice(["sst", "para", "sts"], p=[p_sst, p_para, p_sts])
-
-            if task == "sst":
-                batch = next(iter(sst_train_dataloader))
-                logits = model.predict_sentiment(batch['token_ids'].to(device), batch['attention_mask'].to(device))
-                loss = F.cross_entropy(logits, batch['labels'].to(device))
-            elif task == "para":
-                batch = next(iter(para_train_dataloader))
-                logits = model.predict_paraphrase(batch['token_ids_1'].to(device), batch['attention_mask_1'].to(device),
-                                                  batch['token_ids_2'].to(device), batch['attention_mask_2'].to(device))
-                loss = F.binary_cross_entropy_with_logits(logits, batch['labels'].to(device).float())
-            else:  # task == "sts"
-                batch = next(iter(sts_train_dataloader))
-                logits = model.predict_similarity(batch['token_ids_1'].to(device), batch['attention_mask_1'].to(device),
-                                                batch['token_ids_2'].to(device), batch['attention_mask_2'].to(device))
-                loss = F.mse_loss(logits, batch['labels'].to(device).float())
+            # Calculate losses for each task (use predict_* functions)
+            sst_loss = F.cross_entropy(model.predict_sentiment(sst_batch['token_ids'], sst_batch['attention_mask']), sst_batch['labels'])
+            para_loss = F.binary_cross_entropy_with_logits(model.predict_paraphrase(para_batch['token_ids_1'], para_batch['attention_mask_1'],
+                                                                                   para_batch['token_ids_2'], para_batch['attention_mask_2']), 
+                                                           para_batch['labels'].float())
+            sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'], sts_batch['attention_mask_1'],
+                                                          sts_batch['token_ids_2'], sts_batch['attention_mask_2']), 
+                                  sts_batch['labels'].float())
+            
+            # Combined loss (without annealed sampling weights)
+            loss = sst_loss + para_loss + sts_loss 
             
             loss.backward()
-            # ... (Gradient surgery, same as before)
-
-            pcgrad_optimizer.step()
+            optimizer.step()
             total_loss += loss.item()
-            num_batches += 1
+
+            # Reset iterators if they are exhausted
+            if batch_idx + 1 == min_dataloader_len:
+                sst_iter, para_iter, sts_iter = iter(sst_train_dataloader), iter(para_train_dataloader), iter(sts_train_dataloader)
+
 
         avg_train_loss = total_loss / (len(sst_train_dataloader) + len(para_train_dataloader) + len(sts_train_dataloader))
         train_losses.append(avg_train_loss)
