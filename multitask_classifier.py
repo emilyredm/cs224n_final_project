@@ -198,6 +198,10 @@ def train_multitask(args):
         model.train()
         total_loss = 0
         train_losses = []
+        dev_losses = []
+        dev_sst_accuracy_list = []
+        dev_para_accuracy_list = []
+        dev_sts_corr_list = []
 
         # Use enumerate to get both index and batch
         for batch_idx in tqdm(range(min_dataloader_len), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
