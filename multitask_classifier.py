@@ -51,43 +51,52 @@ def seed_everything(seed=11711):
 
 BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
+PAL_HIDDEN_SIZE = 204  # Adjust as needed
+
+class PAL(nn.Module):
+    """Projected Attention Layer (PAL) as described in the paper."""
+
+    def __init__(self, input_dim, hidden_dim):
+        super().__init__()
+        self.encoder = nn.Linear(input_dim, hidden_dim)
+        self.decoder = nn.Linear(hidden_dim, input_dim)
+        self.attn = nn.MultiheadAttention(hidden_dim, num_heads=12, batch_first=True)  # Adjust num_heads as needed
+
+    def forward(self, x):
+        encoded = self.encoder(x)
+        attn_output, _ = self.attn(encoded, encoded, encoded)
+        decoded = self.decoder(attn_output)
+        return decoded
 
 
 class MultitaskBERT(nn.Module):
-    '''
-    This module should use BERT for 3 tasks:
-
-    - Sentiment classification (predict_sentiment)
-    - Paraphrase detection (predict_paraphrase)
-    - Semantic Textual Similarity (predict_similarity)
-    '''
     def __init__(self, config):
-        super(MultitaskBERT, self).__init__()
+        super().__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
-        # last-linear-layer mode does not require updating BERT paramters.
+
+        # Fine-tuning (same as before)
         assert config.fine_tune_mode in ["last-linear-layer", "full-model"]
         for param in self.bert.parameters():
-            if config.fine_tune_mode == 'last-linear-layer':
-                param.requires_grad = False
-            elif config.fine_tune_mode == 'full-model':
-                param.requires_grad = True
-        # You will want to add layers here to perform the downstream tasks.
-        ### TODO
+            param.requires_grad = (config.fine_tune_mode == 'full-model')
+
+        # Task-specific heads
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
         self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE * 2, 1)
         self.similarity_classifier = nn.Linear(BERT_HIDDEN_SIZE * 2, 1)
 
+        # PALs integrated into BERT layers
+        self.pals = nn.ModuleList([PAL(BERT_HIDDEN_SIZE, PAL_HIDDEN_SIZE) for _ in range(config.num_hidden_layers)])
 
     def forward(self, input_ids, attention_mask):
-        'Takes a batch of sentences and produces u embeddings for them.'
-        # The final BERT embedding is the hidden state of [CLS] token (the first token)
-        # Here, you can start by just returning the embeddings straight from BERT.
-        # When thinking of improvements, you can later try modifying this
-        # (e.g., by adding other layers).
-        ### TODO
-        # TODO make sure indexing here is right
         outputs = self.bert(input_ids, attention_mask)
-        pooled_output = outputs['pooler_output']
+        # Instead of 'hidden_states', use 'last_hidden_state' for PALs
+        last_hidden_state = outputs['last_hidden_state'] 
+
+        # Apply PALs to last_hidden_state
+        for pal in self.pals:
+            last_hidden_state = pal(last_hidden_state) + last_hidden_state 
+
+        pooled_output = last_hidden_state[:, 0, :]  # Get final [CLS] embedding
         return pooled_output
 
 
@@ -185,7 +194,8 @@ def train_multitask(args):
         'num_labels': num_labels,
         'hidden_size': 768,
         'data_dir': '.',
-        'fine_tune_mode': args.fine_tune_mode
+        'fine_tune_mode': args.fine_tune_mode,
+        'num_hidden_layers': 12
     })
     model = MultitaskBERT(config).to(device)
     optimizer = AdamW(model.parameters(), lr=args.lr)
