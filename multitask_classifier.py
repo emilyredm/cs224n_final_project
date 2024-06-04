@@ -198,22 +198,16 @@ def train_multitask(args):
         model.train()
         total_loss = 0
         train_losses = []
-        dev_losses = []
-        dev_sst_accuracy_list = []
-        dev_para_accuracy_list = []
-        dev_sts_corr_list = []
 
-        # Create iterators for each dataloader and track indices
-        sst_iter, para_iter, sts_iter = iter(sst_train_dataloader), iter(para_train_dataloader), iter(sts_train_dataloader)
-        # sst_idx, para_idx, sts_idx = 0, 0, 0
-
+        # Use enumerate to get both index and batch
         for batch_idx in tqdm(range(min_dataloader_len), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
             
-            # Batch-level Sampling: Select one batch from each task
-            sst_batch = next(sst_iter)
-            para_batch = next(para_iter)
-            sts_batch = next(sts_iter)
+            optimizer.zero_grad()
+
+            # Get batches using the index
+            sst_batch = next(iter(sst_train_dataloader))
+            para_batch = next(iter(para_train_dataloader))
+            sts_batch = next(iter(sts_train_dataloader))
 
             # Calculate losses for each task (use predict_* functions)
             sst_loss = F.cross_entropy(model.predict_sentiment(sst_batch['token_ids'], sst_batch['attention_mask']), sst_batch['labels'])
