@@ -196,6 +196,9 @@ def train_multitask(args):
     best_dev_loss = float('inf')  # Initialize best_dev_loss
 
 
+    sts_criterion = nn.CosineEmbeddingLoss(margin=0.2)  # Margin can be adjusted
+    best_dev_sts_corr = float('-inf') 
+
     # Run for the specified number of epochs.
     for epoch in range(args.epochs):
         model.train()
@@ -231,14 +234,18 @@ def train_multitask(args):
         
         for batch_sts in tqdm(sts_train_dataloader, desc=f'STS Train Epoch {epoch}', disable=TQDM_DISABLE):
             optimizer.zero_grad()
-            # STS loss
-            logits_sts = model.predict_similarity(batch_sts['token_ids_1'].to(device), batch_sts['attention_mask_1'].to(device),
-                                                batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
-            loss_sts = F.mse_loss(logits_sts, batch_sts['labels'].to(device).float())
+
+            # STS loss using CosineEmbeddingLoss
+            sent1_emb = model(batch_sts['token_ids_1'].to(device), batch_sts['attention_mask_1'].to(device))
+            sent2_emb = model(batch_sts['token_ids_2'].to(device), batch_sts['attention_mask_2'].to(device))
+            
+            # Convert similarity scores to -1 (dissimilar) and 1 (similar)
+            similarity_target = (batch_sts['labels'].to(device) * 4) - 1  # Scale to [-1, 1]
+            loss_sts = sts_criterion(sent1_emb, sent2_emb, similarity_target)
 
             loss_sts.backward()
             optimizer.step()
-            total_loss += loss_sts.item()  # Accumulate total los
+            total_loss += loss_sts.item()
 
         avg_train_loss = total_loss / (len(sst_train_dataloader) + len(para_train_dataloader) + len(sts_train_dataloader))
         train_losses.append(avg_train_loss)
