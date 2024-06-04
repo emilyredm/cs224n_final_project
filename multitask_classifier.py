@@ -203,15 +203,20 @@ def train_multitask(args):
         dev_para_accuracy_list = []
         dev_sts_corr_list = []
 
+        # Create iterators for each dataloader at the start of each epoch
+        sst_iter = iter(sst_train_dataloader)
+        para_iter = iter(para_train_dataloader)
+        sts_iter = iter(sts_train_dataloader)
+
+
         # Use enumerate to get both index and batch
         for batch_idx in tqdm(range(min_dataloader_len), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
-            
             optimizer.zero_grad()
 
             # Get batches using the index
-            sst_batch = next(iter(sst_train_dataloader))
-            para_batch = next(iter(para_train_dataloader))
-            sts_batch = next(iter(sts_train_dataloader))
+            sst_batch = next(iter(sst_iter))
+            para_batch = next(iter(para_iter))
+            sts_batch = next(iter(sts_iter))
 
             # Calculate losses for each task (use predict_* functions)
             sst_loss = F.cross_entropy(model.predict_sentiment(sst_batch['token_ids'].to(device), sst_batch['attention_mask'].to(device)), sst_batch['labels'].to(device))
