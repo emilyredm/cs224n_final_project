@@ -231,11 +231,11 @@ def train_multitask(args):
             sent2_emb = model(sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device))
 
             similarity_target = (sts_batch['labels'].to(device)*4) -1
-            loss_sts = sts_criterion(sent1_emb, sent2_emb, similarity_target)
+            sts_loss = sts_criterion(sent1_emb, sent2_emb, similarity_target)
 
-            sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device),
-                                                          sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device)), 
-                                  sts_batch['labels'].to(device).float())
+            # sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device),
+            #                                               sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device)), 
+            #                       sts_batch['labels'].to(device).float())
             
             # Combined loss (without annealed sampling weights)
             loss = sst_loss + para_loss + sts_loss 
