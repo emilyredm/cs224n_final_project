@@ -274,7 +274,7 @@ def train_multitask(args):
 
         if dev_loss < best_dev_loss:  
             best_dev_loss = dev_loss
-            save_model(model, optimizer, args, config, args.filepath)
+            # save_model(model, optimizer, args, config, args.filepath)
 
         print(f"Epoch {epoch}: train loss :: {avg_train_loss :.3f}, dev loss :: {dev_loss :.3f}, dev sentiment acc :: {dev_sentiment_accuracy :.3f}, dev para acc :: {dev_paraphrase_accuracy :.3f}, dev sts corr :: {dev_sts_corr :.3f}")
 
@@ -413,4 +413,4 @@ if __name__ == "__main__":
     args.filepath = f'{args.fine_tune_mode}-{args.epochs}-{args.lr}-multitask.pt' # Save path.
     seed_everything(args.seed)  # Fix the seed for reproducibility.
     train_multitask(args)
-    test_multitask(args)
+    # test_multitask(args)
