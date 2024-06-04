@@ -257,7 +257,8 @@ def train_multitask(args):
 
         print(f"Epoch {epoch}: train loss :: {avg_train_loss :.3f}, dev loss :: {dev_loss :.3f}, dev sentiment acc :: {dev_sentiment_accuracy :.3f}, dev para acc :: {dev_paraphrase_accuracy :.3f}, dev sts corr :: {dev_sts_corr :.3f}")
 
-def test_multitask(args):
+def train_multitask(args):
+    device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     '''Test and save predictions on the dev and test sets of all three tasks.'''
     with torch.no_grad():
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
