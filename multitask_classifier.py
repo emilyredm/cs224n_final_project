@@ -33,7 +33,7 @@ from datasets import (
 )
 
 from evaluation import model_eval_sst, model_eval_multitask, model_eval_test_multitask
-
+from pcgrad import PCGrad
 
 TQDM_DISABLE=False
 
@@ -189,6 +189,7 @@ def train_multitask(args):
     })
     model = MultitaskBERT(config).to(device)
     optimizer = AdamW(model.parameters(), lr=args.lr)
+    pcgrad_optimizer = PCGrad(optimizer)
     best_dev_loss = float('inf')  # Initialize best_dev_loss
 
     # Determine the shortest dataloader for balanced training
@@ -211,7 +212,7 @@ def train_multitask(args):
 
         # Use enumerate to get both index and batch
         for batch_idx in tqdm(range(min_dataloader_len), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
-            optimizer.zero_grad()
+            pcgrad_optimizer.zero_grad()
 
             # Get batches using the index
             sst_batch = next(iter(sst_iter))
@@ -231,7 +232,7 @@ def train_multitask(args):
             loss = sst_loss + para_loss + sts_loss 
             
             loss.backward()
-            optimizer.step()
+            pcgrad_optimizer.step()
             total_loss += loss.item()
 
             # Reset iterators if they are exhausted
