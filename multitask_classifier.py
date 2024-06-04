@@ -19,6 +19,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from bert import BertModel
 from optimizer import AdamW
@@ -194,6 +195,8 @@ def train_multitask(args):
     # Determine the shortest dataloader for balanced training
     min_dataloader_len = min(len(sst_train_dataloader), len(para_train_dataloader), len(sts_train_dataloader))
 
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=2)
+
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
@@ -258,6 +261,9 @@ def train_multitask(args):
             best_dev_loss = dev_loss
             save_model(model, optimizer, args, config, args.filepath)
 
+        current_lr = optimizer.param_groups[0]['lr']  # Get the last learning rate
+        print(f"Current learning rate: {current_lr}")
+        scheduler.step(dev_loss)
         print(f"Epoch {epoch}: train loss :: {avg_train_loss :.3f}, dev loss :: {dev_loss :.3f}, dev sentiment acc :: {dev_sentiment_accuracy :.3f}, dev para acc :: {dev_paraphrase_accuracy :.3f}, dev sts corr :: {dev_sts_corr :.3f}")
 
 def test_multitask(args):
