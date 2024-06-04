@@ -229,11 +229,11 @@ def train_multitask(args):
                                   sts_batch['labels'].to(device).float())
             
             # Combined loss (without annealed sampling weights)
-            loss = sst_loss + para_loss + sts_loss 
+            loss = [sst_loss, para_loss, sts_loss]
             
-            loss.backward()
+            pcgrad_optimizer.pc_backward(loss)
             pcgrad_optimizer.step()
-            total_loss += loss.item()
+            total_loss += sum(loss)
 
             # Reset iterators if they are exhausted
             if batch_idx + 1 == min_dataloader_len:
