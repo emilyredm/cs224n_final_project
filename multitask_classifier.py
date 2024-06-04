@@ -194,6 +194,9 @@ def train_multitask(args):
     # Determine the shortest dataloader for balanced training
     min_dataloader_len = min(len(sst_train_dataloader), len(para_train_dataloader), len(sts_train_dataloader))
 
+    sts_criterion = nn.CosineEmbeddingLoss(margin=0.2)  # Margin can be adjusted
+    best_dev_sts_corr = float('-inf') 
+
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
@@ -223,6 +226,13 @@ def train_multitask(args):
             para_loss = F.binary_cross_entropy_with_logits(model.predict_paraphrase(para_batch['token_ids_1'].to(device), para_batch['attention_mask_1'].to(device),
                                                                                    para_batch['token_ids_2'].to(device), para_batch['attention_mask_2'].to(device)), 
                                                            para_batch['labels'].to(device).float())
+            
+            sent1_emb = model(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device))
+            sent2_emb = model(sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device))
+
+            similarity_target = (sts_batch['labels'].to(device)*4) -1
+            loss_sts = sts_criterion(sent1_emb, sent2_emb, similarity_target)
+
             sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device),
                                                           sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device)), 
                                   sts_batch['labels'].to(device).float())
