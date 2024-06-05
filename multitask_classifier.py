@@ -232,7 +232,9 @@ def train_multitask(args):
             loss = [sst_loss, para_loss, sts_loss]
             
             pcgrad_optimizer.pc_backward(loss)
-            pcgrad_optimizer.step()
+            if (batch_idx + 1) % accumulation_steps == 0:
+                pcgrad_optimizer.step()
+                pcgrad_optimizer.zero_grad()
             total_loss += sum(loss)
 
             # Reset iterators if they are exhausted
