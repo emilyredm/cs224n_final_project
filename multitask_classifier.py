@@ -231,12 +231,15 @@ def train_multitask(args):
                                   sts_batch['labels'].to(device).float())
             
             # Combined loss (without annealed sampling weights)
-            loss = [sst_loss, para_loss, sts_loss]
-            
+            # Combine losses and scale for gradient accumulation
+            loss = [(sst_loss + para_loss + sts_loss) / accumulation_steps]
+
             pcgrad_optimizer.pc_backward(loss)
+
             if (batch_idx + 1) % accumulation_steps == 0:
                 pcgrad_optimizer.step()
                 pcgrad_optimizer.zero_grad()
+      
             total_loss += sum(loss)
 
             # Reset iterators if they are exhausted
