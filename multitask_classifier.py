@@ -133,7 +133,7 @@ class MultitaskBERT(nn.Module):
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
         'model': model.state_dict(),
-        'optim': optimizer.state_dict(),
+        'optim': optimizer._optim.state_dict(),
         'args': args,
         'model_config': config,
         'system_rng': random.getstate(),
@@ -189,7 +189,7 @@ def train_multitask(args):
     })
     model = MultitaskBERT(config).to(device)
     optimizer = AdamW(model.parameters(), lr=args.lr)
-    pcgrad_optimizer = PCGrad(optimizer)
+    optimizer = PCGrad(optimizer)
     best_dev_loss = float('inf')  # Initialize best_dev_loss
 
     # Determine the shortest dataloader for balanced training
@@ -214,7 +214,7 @@ def train_multitask(args):
 
         # Use enumerate to get both index and batch
         for batch_idx in tqdm(range(min_dataloader_len), desc=f'Train Epoch {epoch}', disable=TQDM_DISABLE):
-            pcgrad_optimizer.zero_grad()
+            optimizer.zero_grad()
 
             # Get batches using the index
             sst_batch = next(iter(sst_iter))
@@ -234,11 +234,11 @@ def train_multitask(args):
             # Combine losses and scale for gradient accumulation
             loss = [(sst_loss + para_loss + sts_loss) / accumulation_steps]
 
-            pcgrad_optimizer.pc_backward(loss)
+            optimizer.pc_backward(loss)
 
             if (batch_idx + 1) % accumulation_steps == 0:
-                pcgrad_optimizer.step()
-                pcgrad_optimizer.zero_grad()
+                optimizer.step()
+                optimizer.zero_grad()
                 torch.cuda.empty_cache()
       
             total_loss += sum(loss)
