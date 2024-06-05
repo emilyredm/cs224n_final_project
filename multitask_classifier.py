@@ -75,7 +75,7 @@ class MultitaskBERT(nn.Module):
         ### TODO
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
         self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE * 2, 1)
-        self.similarity_classifier = nn.Linear(BERT_HIDDEN_SIZE * 2, 1)
+        self.similarity_classifier = nn.Linear(BERT_HIDDEN_SIZE, 1)
 
 
     def forward(self, input_ids, attention_mask):
@@ -120,11 +120,15 @@ class MultitaskBERT(nn.Module):
         '''Given a batch of pairs of sentences, outputs a single logit corresponding to how similar they are.
         Note that your output should be unnormalized (a logit).
         '''
-        ### TODO
-        logit = self.similarity_classifier(torch.cat([self.forward(input_ids_1, attention_mask_1),
-                                                      self.forward(input_ids_2, attention_mask_2)], dim=-1)
-                                             ).squeeze()
-        # same as above
+        input_ids = torch.cat((input_ids_1, input_ids_2), dim=1)
+        attention_mask = torch.cat((attention_mask_1, attention_mask_2), dim=1)
+
+        # Get the pooled output from BERT for the concatenated input
+        pooled_output = self.forward(input_ids, attention_mask)
+
+        # Pass the pooled output through the similarity classifier
+        logit = self.similarity_classifier(pooled_output).squeeze()
+
         return logit
 
 
