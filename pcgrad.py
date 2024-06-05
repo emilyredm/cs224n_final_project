@@ -93,7 +93,7 @@ class PCGrad():
         grads, shapes, has_grads = [], [], []
         for obj in objectives:
             self._optim.zero_grad(set_to_none=True)
-            obj.backward(retain_graph=True)
+            obj.backward(retain_graph=False)
             grad, shape, has_grad = self._retrieve_grad()
             grads.append(self._flatten_grad(grad, shape))
             has_grads.append(self._flatten_grad(has_grad, shape))
