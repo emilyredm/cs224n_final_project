@@ -234,18 +234,14 @@ def train_multitask(args):
             sent1_emb = model(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device))
             sent2_emb = model(sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device))
 
-            # Normalize embeddings
-            sent1_emb = F.normalize(sent1_emb, p=2, dim=1)
-            sent2_emb = F.normalize(sent2_emb, p=2, dim=1)
-
             # Compute cosine similarity
             similarity = torch.cosine_similarity(sent1_emb, sent2_emb)
 
             # Scale similarity to [0, 5] to match labels
-            similarity = (similarity + 1) * 2.5
+            similarity = (similarity) * 5
 
             # Calculate MSE loss between predicted similarity and gold labels
-            sts_loss = sts_criterion(similarity, sts_batch['labels'].to(device).float())
+            sts_loss = F.cross_entropy(similarity, sts_batch['labels'].to(device))
             loss = sst_loss + para_loss + sts_loss 
             
             loss.backward()
