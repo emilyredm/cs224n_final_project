@@ -195,8 +195,6 @@ def train_multitask(args):
     # Determine the shortest dataloader for balanced training
     min_dataloader_len = min(len(sst_train_dataloader), len(para_train_dataloader), len(sts_train_dataloader))
 
-    accumulation_steps = 2
-
     for epoch in range(args.epochs):
         model.train()
         total_loss = 0
@@ -232,14 +230,12 @@ def train_multitask(args):
             
             # Combined loss (without annealed sampling weights)
             # Combine losses and scale for gradient accumulation
-            loss = [(sst_loss + para_loss + sts_loss) / accumulation_steps]
+            loss = [sst_loss,para_loss, sts_loss]
 
-            optimizer.pc_backward(loss)
+            optimizer.pc_backward(loss) 
 
-            if (batch_idx + 1) % accumulation_steps == 0:
-                optimizer.step()
-                optimizer.zero_grad()
-                torch.cuda.empty_cache()
+            optimizer.step()
+            optimizer.zero_grad()
       
             total_loss += sum(loss)
 
