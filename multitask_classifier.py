@@ -238,8 +238,8 @@ def train_multitask(args):
 
             if (batch_idx + 1) % accumulation_steps == 0:
                 pcgrad_optimizer.step()
-                torch.cuda.empty_cache()
                 pcgrad_optimizer.zero_grad()
+                torch.cuda.empty_cache()
       
             total_loss += sum(loss)
 
