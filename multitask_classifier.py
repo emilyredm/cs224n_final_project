@@ -128,7 +128,7 @@ class MultitaskBERT(nn.Module):
         # (e.g., by adding other layers).
         ### TODO
         # TODO make sure indexing here is right
-        outputs = self.bert(input_ids, attention_mask)
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         pooled_output = outputs['pooler_output']
         return pooled_output
 
@@ -139,18 +139,19 @@ class MultitaskBERT(nn.Module):
         (0 - negative, 1- somewhat negative, 2- neutral, 3- somewhat positive, 4- positive)
         Thus, your output should contain 5 logits for each sentence.
         '''
-        logits = self.sentiment_classifier(self.forward(input_ids, attention_mask))
+        logits = self.sentiment_classifier(self.forward(input_ids=input_ids, attention_mask=attention_mask))
         return logits
     
     def smart_predict_sentiment(self, input_ids, attention_mask, labels):
-        emb = self.bert(input_ids, attention_mask)  # Get the output dictionary
-        
-        # Get initial embeddings directly from the word_embedding layer and cast to float
-        embed = self.bert.word_embedding(input_ids).float()  # Access the word_embedding layer and cast to float
         def eval(embed):
             output = self.bert(attention_mask=attention_mask, inputs_embeds=embed)  # Use inputs_embeds here
             pooled_output = output['pooler_output'] 
             return self.predict_sentiment(pooled_output, attention_mask)  # Access last_hidden_state correctly
+
+        #emb = self.bert(input_ids, attention_mask)  # Get the output dictionary
+        
+        # Get initial embeddings directly from the word_embedding layer and cast to float
+        embed = self.bert.word_embedding(input_ids).float()  # Access the word_embedding layer and cast to float
 
         smart_loss_fn = SMARTLoss(eval_fn=eval, loss_fn=kl_loss, loss_last_fn=sym_kl_loss)
         with torch.enable_grad():  
