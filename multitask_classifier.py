@@ -23,6 +23,7 @@ from torch.utils.data import DataLoader
 from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
+from smart_pytorch import SMARTLoss, kl_loss, sym_kl_loss
 
 from datasets import (
     SentenceClassificationDataset,
@@ -76,6 +77,7 @@ class MultitaskBERT(nn.Module):
         self.sentiment_classifier = nn.Linear(BERT_HIDDEN_SIZE, N_SENTIMENT_CLASSES)
         self.paraphrase_classifier = nn.Linear(BERT_HIDDEN_SIZE * 2, 1)
         self.similarity_classifier = nn.Linear(BERT_HIDDEN_SIZE, 1)
+        self.smart_weight = 0.02
 
 
     def forward(self, input_ids, attention_mask):
@@ -99,6 +101,23 @@ class MultitaskBERT(nn.Module):
         '''
         logits = self.sentiment_classifier(self.forward(input_ids, attention_mask))
         return logits
+    
+    def smart_predict_sentiment(self, input_ids, attention_mask, labels):
+        emb = self.bert(input_ids, attention_mask)  # Get the output dictionary
+        
+        # Get initial embeddings directly from the word_embedding layer and cast to float
+        embed = self.bert.word_embedding(input_ids).float()  # Access the word_embedding layer and cast to float
+        def eval(embed):
+            output = self.bert(inputs_embeds=embed, attention_mask=attention_mask)  # Use inputs_embeds here
+            pooled_output = output['pooler_output'] 
+            return self.predict_sentiment(pooled_output, attention_mask)  # Access last_hidden_state correctly
+
+        smart_loss_fn = SMARTLoss(eval_fn=eval, loss_fn=kl_loss, loss_last_fn=sym_kl_loss)
+        with torch.enable_grad():  
+            state = eval(embed)  # Pass the dictionary to eval
+        loss = F.cross_entropy(state, labels)
+        loss = loss + self.smart_weight * smart_loss_fn(embed, state)  # Access last_hidden_state correctly
+        return loss
 
     def predict_paraphrase(self,
                            input_ids_1, attention_mask_1,
@@ -112,6 +131,23 @@ class MultitaskBERT(nn.Module):
                                            ).squeeze()
         # unsure about if dim should be 1 (vs -1) or if squeeze should be applied or not
         return logit
+
+
+    def smart_predict_paraphrase(self, input_ids_1, attention_mask_1, input_ids_2, attention_mask_2, labels):
+        emb1 = self.bert.word_embedding(input_ids_1).float() # Access the word_embedding layer and cast to float
+        emb2 = self.bert.word_embedding(input_ids_2).float() # Access the word_embedding layer and cast to float
+
+        def eval(emb1, emb2):
+            out1 = self.bert(inputs_embeds=emb1, attention_mask=attention_mask_1)
+            out2 = self.bert(inputs_embeds=emb2, attention_mask=attention_mask_2)
+            return self.predict_paraphrase(out1['last_hidden_state'], attention_mask_1, out2['last_hidden_state'], attention_mask_2)  # Access last_hidden_state correctly
+        
+        smart_loss_fn = SMARTLoss(eval_fn=eval, loss_fn=kl_loss, loss_last_fn=sym_kl_loss)
+        with torch.enable_grad():  
+            state = eval(emb1, emb2)
+        loss = F.binary_cross_entropy_with_logits(state, labels.float())
+        loss = loss + self.smart_weight * smart_loss_fn(emb1, emb2, state)  # Access last_hidden_state correctly
+        return loss
 
 
     def predict_similarity(self,
@@ -223,10 +259,10 @@ def train_multitask(args):
             sts_batch = next(iter(sts_iter))
 
             # Calculate losses for each task (use predict_* functions)
-            sst_loss = F.cross_entropy(model.predict_sentiment(sst_batch['token_ids'].to(device), sst_batch['attention_mask'].to(device)), sst_batch['labels'].to(device))
-            para_loss = F.binary_cross_entropy_with_logits(model.predict_paraphrase(para_batch['token_ids_1'].to(device), para_batch['attention_mask_1'].to(device),
-                                                                                   para_batch['token_ids_2'].to(device), para_batch['attention_mask_2'].to(device)), 
-                                                           para_batch['labels'].to(device).float())
+            sst_loss = model.smart_predict_sentiment(sst_batch['token_ids'].to(device), sst_batch['attention_mask'].to(device), sst_batch['labels'].to(device))
+            para_loss = model.smart_predict_paraphrase(model, para_batch['token_ids_1'].to(device), para_batch['attention_mask_1'].to(device),
+                                                 para_batch['token_ids_2'].to(device), para_batch['attention_mask_2'].to(device), para_batch['labels'].to(device).float)
+        
             sts_loss = F.mse_loss(model.predict_similarity(sts_batch['token_ids_1'].to(device), sts_batch['attention_mask_1'].to(device),
                                                           sts_batch['token_ids_2'].to(device), sts_batch['attention_mask_2'].to(device)), 
                                   sts_batch['labels'].to(device).float())
