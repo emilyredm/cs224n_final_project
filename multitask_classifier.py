@@ -54,6 +54,46 @@ BERT_HIDDEN_SIZE = 768
 N_SENTIMENT_CLASSES = 5
 
 
+# class CustomBertModel(BertModel):
+#     #def forward(self, input_ids=None, attention_mask=None, inputs_embeds=None):
+#         # if input_ids is not None and inputs_embeds is not None:
+#         #     raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+#         # elif input_ids is not None:
+#         #     input_shape = input_ids.size()
+#         #     input_ids = input_ids.view(-1, input_shape[-1])
+#         # elif inputs_embeds is not None:
+#         #     input_shape = inputs_embeds.size()[:-1]
+#         # else:
+#         #     raise ValueError("You have to specify either input_ids or inputs_embeds")
+
+#         # if attention_mask is None:
+#         #     attention_mask = torch.ones(input_shape, device=self.device)
+        
+#         # # The rest of the forward pass remains the same as the original BertModel
+#         # return super().forward(input_ids, attention_mask=attention_mask)
+
+#     # def forward(self, input_ids=None, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None, inputs_embeds=None, encoder_hidden_states=None, encoder_attention_mask=None, output_attentions=None, output_hidden_states=None, return_dict=None):
+#     #     if input_ids is None and inputs_embeds is None:
+#     #         raise ValueError("You must provide either input_ids or inputs_embeds")
+
+#     #     if inputs_embeds is not None:
+#     #         return super().forward(inputs_embeds=inputs_embeds, attention_mask=attention_mask)
+#     #     else:
+#     #         return super().forward(input_ids=input_ids, attention_mask=attention_mask)
+
+#     def forward(self, input_ids=None, attention_mask=None, token_type_ids=None, position_ids=None, head_mask=None, inputs_embeds=None, encoder_hidden_states=None, encoder_attention_mask=None, output_attentions=None, output_hidden_states=None, return_dict=None):
+#         # Ensure it can handle both input_ids and inputs_embeds
+#         if input_ids is not None and inputs_embeds is not None:
+#             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+
+#         if inputs_embeds is not None:
+#             # Forward call for inputs_embeds
+#             return super().forward(inputs_embeds=inputs_embeds, attention_mask=attention_mask, token_type_ids=token_type_ids, position_ids=position_ids, head_mask=head_mask, encoder_hidden_states=encoder_hidden_states, encoder_attention_mask=encoder_attention_mask, output_attentions=output_attentions, output_hidden_states=output_hidden_states, return_dict=return_dict)
+#         else:
+#             # Forward call for input_ids
+#             return super().forward(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, position_ids=position_ids, head_mask=head_mask, encoder_hidden_states=encoder_hidden_states, encoder_attention_mask=encoder_attention_mask, output_attentions=output_attentions, output_hidden_states=output_hidden_states, return_dict=return_dict)
+
+
 class MultitaskBERT(nn.Module):
     '''
     This module should use BERT for 3 tasks:
@@ -108,7 +148,7 @@ class MultitaskBERT(nn.Module):
         # Get initial embeddings directly from the word_embedding layer and cast to float
         embed = self.bert.word_embedding(input_ids).float()  # Access the word_embedding layer and cast to float
         def eval(embed):
-            output = self.bert(inputs_embeds=embed, attention_mask=attention_mask)  # Use inputs_embeds here
+            output = self.bert(attention_mask=attention_mask, inputs_embeds=embed)  # Use inputs_embeds here
             pooled_output = output['pooler_output'] 
             return self.predict_sentiment(pooled_output, attention_mask)  # Access last_hidden_state correctly
 
@@ -138,8 +178,8 @@ class MultitaskBERT(nn.Module):
         emb2 = self.bert.word_embedding(input_ids_2).float() # Access the word_embedding layer and cast to float
 
         def eval(emb1, emb2):
-            out1 = self.bert(inputs_embeds=emb1, attention_mask=attention_mask_1)
-            out2 = self.bert(inputs_embeds=emb2, attention_mask=attention_mask_2)
+            out1 = self.bert(attention_mask=attention_mask_1, inputs_embeds=emb1)
+            out2 = self.bert(attention_mask=attention_mask_2, inputs_embeds=emb1)
             return self.predict_paraphrase(out1['last_hidden_state'], attention_mask_1, out2['last_hidden_state'], attention_mask_2)  # Access last_hidden_state correctly
         
         smart_loss_fn = SMARTLoss(eval_fn=eval, loss_fn=kl_loss, loss_last_fn=sym_kl_loss)
@@ -166,8 +206,6 @@ class MultitaskBERT(nn.Module):
         logit = self.similarity_classifier(pooled_output).squeeze()
 
         return logit
-
-
 
 
 def save_model(model, optimizer, args, config, filepath):
