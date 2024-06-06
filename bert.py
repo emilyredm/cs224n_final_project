@@ -185,67 +185,36 @@ class BertModel(BertPreTrainedModel):
     self.init_weights()
 
   def embed(self, input_ids=None, inputs_embeds=None):
-    if inputs_embeds is not None:
-        r_inputs_embeds = inputs_embeds
-    elif input_ids is not None:
-        r_inputs_embeds = self.word_embedding(input_ids)
-    else:
-        raise ValueError("Neither input_ids or inputs_embeds were provided.")
-    
-    seq_length = r_inputs_embeds.size(1)  # Get the sequence length from the actual inputs
-    
-    #pos_ids = self.position_ids[:, :input_ids.size(1)] if input_ids is not None else torch.arange(r_inputs_embeds.size(1)).unsqueeze(0)
-    
-    if input_ids is not None:
-        pos_ids = self.position_ids[:, :seq_length]  # Adjust position ids to the sequence length
-    else:
-        pos_ids = torch.arange(seq_length, dtype=torch.long, device=r_inputs_embeds.device).unsqueeze(0)
+        if input_ids is not None and inputs_embeds is not None:
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
+        elif input_ids is not None:
+            # If input_ids is provided, compute embeddings as usual
+            input_shape = input_ids.size()
+            seq_length = input_shape[1]
+            inputs_embeds = self.word_embedding(input_ids)
 
-    pos_embeds = self.pos_embedding(pos_ids)
+            # Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
+            pos_ids = self.position_ids[:, :seq_length]
+            pos_embeds = self.pos_embedding(pos_ids)
 
-    tk_type_ids = torch.zeros_like(pos_ids)
-    tk_type_embeds = self.tk_type_embedding(tk_type_ids)
+            # Get token type ids. Since we are not considering token type, this embedding is
+            # just a placeholder.
+            tk_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
+            tk_type_embeds = self.tk_type_embedding(tk_type_ids)
 
-    r_inputs_embeds = r_inputs_embeds + pos_embeds + tk_type_embeds
-
-    print("Input Embeddings Shape:", r_inputs_embeds.shape)
-    print("Position Embeddings Shape:", pos_embeds.shape)
-    print("Token Type Embeddings Shape:", tk_type_embeds.shape)
-
-    r_inputs_embeds = self.embed_layer_norm(r_inputs_embeds)
-    r_inputs_embeds = self.embed_dropout(r_inputs_embeds)
-    return inputs_embeds
-  
-    # if inputs_embeds is None: 
-    #   input_shape = input_ids.size()
-    #   seq_length = input_shape[1]
-
-    #   # Get word embedding from self.word_embedding into input_embeds.
-    #   inputs_embeds = None
-    #   ### TODO
-    #   inputs_embeds = self.word_embedding(input_ids)
-
-    #   # Use pos_ids to get position embedding from self.pos_embedding into pos_embeds.
-    #   pos_ids = self.position_ids[:, :seq_length]
-    #   pos_embeds = None
-    #   ### TODO
-    #   pos_embeds = self.pos_embedding(pos_ids)
-
-    #   # Get token type ids. Since we are not considering token type, this embedding is
-    #   # just a placeholder.
-    #   tk_type_ids = torch.zeros(input_shape, dtype=torch.long, device=input_ids.device)
-    #   tk_type_embeds = self.tk_type_embedding(tk_type_ids)
-
-    #   # Add three embeddings together; then apply embed_layer_norm and dropout and return.
-    #   ### TODO
-    #   hidden_states = inputs_embeds + pos_embeds + tk_type_embeds
-    #   hidden_states = self.embed_layer_norm(hidden_states)
-    #   hidden_states = self.embed_dropout(hidden_states)
-    #   return hidden_states
-    
-    # inputs_embeds = self.embed_layer_norm(inputs_embeds)
-    # inputs_embeds = self.embed_dropout(inputs_embeds)
-    # return inputs_embeds
+            # Add three embeddings together; then apply embed_layer_norm and dropout
+            hidden_states = inputs_embeds + pos_embeds + tk_type_embeds
+            hidden_states = self.embed_layer_norm(hidden_states)
+            hidden_states = self.embed_dropout(hidden_states)
+            return hidden_states
+        elif inputs_embeds is not None:
+            # If inputs_embeds are provided, use them directly (no need to compute)
+            # However, still apply layer normalization and dropout for consistency
+            hidden_states = self.embed_layer_norm(inputs_embeds)
+            hidden_states = self.embed_dropout(hidden_states)
+            return hidden_states
+        else:
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
 
 
   def encode(self, hidden_states, attention_mask):
@@ -266,29 +235,30 @@ class BertModel(BertPreTrainedModel):
 
     return hidden_states
 
+  
+
   def forward(self, input_ids=None, attention_mask=None, inputs_embeds=None):
-    """
-    input_ids: [batch_size, seq_len], seq_len is the max length of the batch
-    attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
-    """
-    if input_ids is not None:
-        input_ids = input_ids.long()
-        embedding_output = self.embed(input_ids=input_ids)
-    elif inputs_embeds is not None:
-        # If input_ids is None and inputs_embeds is provided
-        embedding_output = self.embed(inputs_embeds=inputs_embeds)
-    else:
-        raise ValueError("Either input_ids or inputs_embeds must be provided.")
+        """
+        input_ids: [batch_size, seq_len], seq_len is the max length of the batch
+        attention_mask: same size as input_ids, 1 represents non-padding tokens, 0 represents padding tokens
+        inputs_embeds: [batch_size, seq_len, hidden_size] (Optional)
+        """
 
-    # Get the embedding for each input token.
-    #embedding_output = self.embed(input_ids=input_ids, inputs_embeds=inputs_embeds)
+        # If input_ids is provided, but not inputs_embeds, then use embed as normal
+        if input_ids is not None and inputs_embeds is None:
+            embedding_output = self.embed(input_ids=input_ids)
+        elif input_ids is None and inputs_embeds is not None:
+            # If inputs_embeds are provided, use them directly
+            embedding_output = inputs_embeds
+        else:
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
 
-    # Feed to a transformer (a stack of BertLayers).
-    sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
+        # Feed to a transformer (a stack of BertLayers).
+        sequence_output = self.encode(embedding_output, attention_mask=attention_mask)
 
-    # Get cls token hidden state.
-    first_tk = sequence_output[:, 0]
-    first_tk = self.pooler_dense(first_tk)
-    first_tk = self.pooler_af(first_tk)
+        # Get cls token hidden state.
+        first_tk = sequence_output[:, 0]
+        first_tk = self.pooler_dense(first_tk)
+        first_tk = self.pooler_af(first_tk)
 
-    return {'last_hidden_state': sequence_output, 'pooler_output': first_tk}
+        return {'last_hidden_state': sequence_output, 'pooler_output': first_tk}
